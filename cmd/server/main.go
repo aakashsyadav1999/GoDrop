@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,18 +13,14 @@ import (
 	"time"
 
 	"github.com/aakash/godrop/internal/api"
+	"github.com/aakash/godrop/internal/config"
+	"github.com/aakash/godrop/internal/database"
 	"github.com/aakash/godrop/internal/job"
 	"github.com/aakash/godrop/internal/pool"
 	"github.com/aakash/godrop/internal/processor"
 	"github.com/aakash/godrop/internal/store"
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
-)
-
-const (
-	shutdownTimeout = 10 * time.Second // wait for in-flight HTTP requests
-	drainTimeout    = 30 * time.Second // wait for queued jobs to finish
-	jobTTL          = 24 * time.Hour   // how long a job record is kept in Redis
-
 )
 
 func main() {
@@ -34,30 +31,46 @@ func main() {
 }
 
 func run() error {
-	addr := flag.String("addr", ":8080", "address to listen on")
-	workers := flag.Int("workers", 5, "number of concurrent workers")
-	queue := flag.Int("queue", 100, "how many jobs may wait for a free worker")
-	timeout := flag.Duration("timeout", 10*time.Second, "per-job timeout")
-	redisAddr := flag.String("redis", "", "Redis address, e.g. 127.0.0.1:6380; empty keeps job state in memory")
+	// Optional .env for local development. Variables already set in the real
+	// environment win, and a missing file is fine.
+	_ = godotenv.Load()
 
-	flag.Parse()
-
-	if *workers < 1 || *queue < 1 || *timeout <= 0 {
-		return fmt.Errorf("workers and queue must be at least 1, and timeout must be positive")
+	cfg, err := config.Load(os.Args[1:], os.Getenv)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 
+	storeKind := "memory"
 	var jobStore store.JobStore = store.NewMemoryStore()
-	if *redisAddr != "" {
-		rdb := redis.NewClient(&redis.Options{Addr: *redisAddr})
+	if cfg.RedisAddr != "" {
+		rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 		defer rdb.Close()
 
 		pingCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		err := rdb.Ping(pingCtx).Err()
 		cancel()
 		if err != nil {
-			return fmt.Errorf("connect to redis at %s: %w", *redisAddr, err)
+			return fmt.Errorf("connect to redis at %s: %w", cfg.RedisAddr, err)
 		}
-		jobStore = store.NewRedisStore(rdb, jobTTL)
+		jobStore = store.NewRedisStore(rdb, cfg.JobTTL)
+		storeKind = "redis"
+	}
+
+	var history store.HistoryStore = store.NopHistory{}
+	if cfg.PostgresDSN != "" {
+		db, err := database.Open(context.Background(), cfg.PostgresDSN)
+		if err != nil {
+			return fmt.Errorf("connect to postgres: %w", err) // the DSN holds a password, so it is never logged
+		}
+		defer db.Close()
+
+		if err := database.Migrate(context.Background(), db); err != nil {
+			return err
+		}
+		history = database.NewHistory(db)
 	}
 
 	// The Fetcher takes a string; the pool carries URLJobs. ProcessorFunc adapts one to the other.
@@ -68,10 +81,10 @@ func run() error {
 		},
 	)
 
-	p := pool.New(fetchURL, *workers, *queue, *timeout)
+	p := pool.New(fetchURL, cfg.Workers, cfg.QueueSize, cfg.JobTimeout)
 	p.Start(context.Background())
 
-	srv := api.NewServer(jobStore, p)
+	srv := api.NewServer(jobStore, history, p)
 
 	consumerDone := make(chan struct{})
 	go func() {
@@ -80,7 +93,7 @@ func run() error {
 	}()
 
 	httpServer := &http.Server{
-		Addr:              *addr,
+		Addr:              cfg.Addr,
 		Handler:           srv.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -90,7 +103,7 @@ func run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", *addr, "workers", *workers, "queue", *queue)
+		slog.Info("listening", "addr", cfg.Addr, "workers", cfg.Workers, "queue", cfg.QueueSize, "store", storeKind, "history", cfg.PostgresDSN != "")
 		serverErr <- httpServer.ListenAndServe()
 	}()
 
@@ -104,7 +117,7 @@ func run() error {
 	slog.Info("shutting down")
 
 	// 1. Stop taking requests, and wait for the ones in flight (they may still Submit).
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		slog.Error("http shutdown", "err", err)
@@ -117,7 +130,7 @@ func run() error {
 	select {
 	case <-consumerDone:
 		slog.Info("all jobs finished")
-	case <-time.After(drainTimeout):
+	case <-time.After(cfg.DrainTimeout):
 		slog.Warn("drain timed out; unfinished jobs are lost")
 	}
 

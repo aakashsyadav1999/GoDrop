@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/aakash/godrop/internal/job"
 	"github.com/aakash/godrop/internal/pool"
@@ -70,6 +71,30 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, rec)
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100 {
+			writeError(w, http.StatusBadRequest, "limit must be a number from 1 to 100")
+			return
+		}
+		limit = n
+	}
+
+	recs, err := s.history.List(r.Context(), limit)
+	if err != nil {
+		slog.Error("list history", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if recs == nil {
+		recs = []store.Record{} // encode as [] and not null
+	}
+
+	writeJSON(w, http.StatusOK, recs)
 }
 
 func validateURL(raw string) error {

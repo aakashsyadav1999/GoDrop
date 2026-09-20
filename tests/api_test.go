@@ -20,19 +20,7 @@ import (
 // newAPI starts a real pool and store behind an httptest server.
 func newAPI(t *testing.T, proc pool.Processor[job.URLJob, processor.Page], workers, queue int) *httptest.Server {
 	t.Helper()
-
-	p := pool.New(proc, workers, queue, time.Second)
-	p.Start(context.Background())
-
-	srv := api.NewServer(store.NewMemoryStore(), p)
-	go srv.ConsumeResults()
-
-	ts := httptest.NewServer(srv.Routes())
-	t.Cleanup(func() {
-		ts.Close()
-		p.Shutdown()
-	})
-	return ts
+	return newAPIWithHistory(t, proc, workers, queue, store.NopHistory{})
 }
 
 func postJob(t *testing.T, base, body string) *http.Response {
@@ -178,4 +166,21 @@ func TestAPIQueueFullIs503(t *testing.T) {
 	if resp.Header.Get("Retry-After") == "" {
 		t.Error("503 should carry a Retry-After header")
 	}
+}
+
+func newAPIWithHistory(t *testing.T, proc pool.Processor[job.URLJob, processor.Page], workers, queue int, h store.HistoryStore) *httptest.Server {
+	t.Helper()
+
+	p := pool.New(proc, workers, queue, time.Second)
+	p.Start(context.Background())
+
+	srv := api.NewServer(store.NewMemoryStore(), h, p)
+	go srv.ConsumeResults()
+
+	ts := httptest.NewServer(srv.Routes())
+	t.Cleanup(func() {
+		ts.Close()
+		p.Shutdown()
+	})
+	return ts
 }

@@ -33,8 +33,11 @@ func RequestLogger(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 
 		level := slog.LevelInfo
-		if rec.status >= 500 {
+		switch {
+		case rec.status >= 500:
 			level = slog.LevelError
+		case r.URL.Path == "/healthz":
+			level = slog.LevelDebug // health checks run every few seconds: keep them out of the normal log
 		}
 		logger.Log(r.Context(), level, "request",
 			"method", r.Method,

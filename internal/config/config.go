@@ -23,6 +23,9 @@ type Config struct {
 	PostgresDSN     string        // empty means do not record job history
 	LogLevel        string        // debug, info, warn or error
 	LogFormat       string        // text or json
+	RateLimit       float64       // requests per second allowed per client; 0 disables limiting
+	RateBurst       int           // requests a client may send at once
+	TrustProxy      bool          // believe X-Forwarded-For (only behind a proxy you control)
 
 }
 
@@ -37,6 +40,8 @@ func defaults() Config {
 		DrainTimeout:    30 * time.Second,
 		LogLevel:        "info",
 		LogFormat:       "text",
+		RateLimit:       10,
+		RateBurst:       20,
 	}
 }
 
@@ -62,6 +67,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs.StringVar(&cfg.PostgresDSN, "postgres", cfg.PostgresDSN, "Postgres DSN for job history; empty disables history (env GODROP_POSTGRES_DSN)")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "debug, info, warn or error (env GODROP_LOG_LEVEL)")
 	fs.StringVar(&cfg.LogFormat, "log-format", cfg.LogFormat, "text or json (env GODROP_LOG_FORMAT)")
+	fs.Float64Var(&cfg.RateLimit, "rate-limit", cfg.RateLimit, "requests per second per client; 0 disables limiting (env GODROP_RATE_LIMIT)")
+	fs.IntVar(&cfg.RateBurst, "rate-burst", cfg.RateBurst, "requests a client may send at once (env GODROP_RATE_BURST)")
+	fs.BoolVar(&cfg.TrustProxy, "trust-proxy", cfg.TrustProxy, "read the client address from X-Forwarded-For; only behind a proxy you control (env GODROP_TRUST_PROXY)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -104,6 +112,26 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 			*dst = d
 		}
 	}
+	flt := func(dst *float64, key string) {
+		if v := getenv(key); v != "" {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %q is not a number", key, v))
+				return
+			}
+			*dst = f
+		}
+	}
+	boolean := func(dst *bool, key string) {
+		if v := getenv(key); v != "" {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %q is not true or false", key, v))
+				return
+			}
+			*dst = b
+		}
+	}
 
 	str(&c.Addr, "GODROP_ADDR")
 	num(&c.Workers, "GODROP_WORKERS")
@@ -116,6 +144,9 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	dur(&c.DrainTimeout, "GODROP_DRAIN_TIMEOUT")
 	str(&c.LogLevel, "GODROP_LOG_LEVEL")
 	str(&c.LogFormat, "GODROP_LOG_FORMAT")
+	flt(&c.RateLimit, "GODROP_RATE_LIMIT")
+	num(&c.RateBurst, "GODROP_RATE_BURST")
+	boolean(&c.TrustProxy, "GODROP_TRUST_PROXY")
 
 	return errors.Join(errs...)
 }
@@ -128,6 +159,13 @@ func (c Config) validate() error {
 	}
 	if c.QueueSize < 1 {
 		errs = append(errs, errors.New("queue must be at least 1"))
+	}
+
+	if c.RateLimit < 0 {
+		errs = append(errs, errors.New("rate limit must not be negative"))
+	}
+	if c.RateLimit > 0 && c.RateBurst < 1 {
+		errs = append(errs, errors.New("rate burst must be at least 1 when rate limiting is on"))
 	}
 
 	switch c.LogLevel {

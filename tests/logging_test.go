@@ -106,3 +106,21 @@ func TestRequestLoggerLogsServerErrorsAtErrorLevel(t *testing.T) {
 		t.Fatalf("unexpected log: %v", m)
 	}
 }
+
+func TestRequestLoggerKeepsHealthChecksOutOfTheInfoLog(t *testing.T) {
+	handler := func(logger *slog.Logger) http.Handler {
+		return api.RequestLogger(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	}
+
+	logger, buf := jsonLogger(t, "info")
+	handler(logger).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/healthz", nil))
+	if buf.Len() != 0 {
+		t.Fatalf("a health check should not be logged at info level, got %q", buf.String())
+	}
+
+	logger, buf = jsonLogger(t, "debug")
+	handler(logger).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/healthz", nil))
+	if m := lastLine(t, buf); m["level"] != "DEBUG" || m["path"] != "/healthz" {
+		t.Fatalf("at debug level the health check should be logged: %v", m)
+	}
+}

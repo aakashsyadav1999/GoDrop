@@ -98,6 +98,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, recs)
 }
 
+// handleHealth reports that the process is up and serving. Docker and Caddy call it.
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func validateURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {

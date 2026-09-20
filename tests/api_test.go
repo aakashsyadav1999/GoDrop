@@ -184,3 +184,19 @@ func newAPIWithHistory(t *testing.T, proc pool.Processor[job.URLJob, processor.P
 	})
 	return ts
 }
+
+func TestAPIHealthz(t *testing.T) {
+	ts := newAPI(t, okProcessor(), 1, 1)
+
+	resp, err := http.Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	var body map[string]string
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if resp.StatusCode != http.StatusOK || body["status"] != "ok" {
+		t.Fatalf("got %d %v, want 200 {status: ok}", resp.StatusCode, body)
+	}
+}

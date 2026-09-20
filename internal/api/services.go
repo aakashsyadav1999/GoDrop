@@ -33,6 +33,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /jobs", s.handleSubmit)
 	mux.HandleFunc("GET /jobs/{id}", s.handleGet)
 	mux.HandleFunc("GET /history", s.handleHistory)
+	mux.HandleFunc("GET /healthz", handleHealth)
 	return mux
 }
 

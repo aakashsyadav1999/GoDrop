@@ -87,6 +87,9 @@ func TestConfigRejectsBadValues(t *testing.T) {
 		{"stray argument", []string{"extra"}, nil, "unexpected argument"},
 		{"bad log level", nil, map[string]string{"GODROP_LOG_LEVEL": "loud"}, "log level"},
 		{"bad log format", []string{"-log-format", "xml"}, nil, "log format"},
+		{"negative rate limit", []string{"-rate-limit=-1"}, nil, "rate limit must not be negative"},
+		{"zero burst with limiting on", []string{"-rate-burst", "0"}, nil, "rate burst must be at least 1"},
+		{"bad bool env", nil, map[string]string{"GODROP_TRUST_PROXY": "maybe"}, "GODROP_TRUST_PROXY"},
 	}
 
 	for _, tc := range tests {
@@ -106,5 +109,24 @@ func TestConfigHelp(t *testing.T) {
 	_, err := config.Load([]string{"-h"}, fakeEnv(nil))
 	if !errors.Is(err, flag.ErrHelp) {
 		t.Fatalf("got %v, want flag.ErrHelp", err)
+	}
+}
+
+func TestConfigRateLimitSettings(t *testing.T) {
+	cfg, err := config.Load(nil, fakeEnv(nil))
+	if err != nil || cfg.RateLimit != 10 || cfg.RateBurst != 20 || cfg.TrustProxy {
+		t.Fatalf("defaults: %+v, %v", cfg, err)
+	}
+
+	cfg, err = config.Load([]string{"-rate-limit", "0"}, fakeEnv(map[string]string{"GODROP_RATE_BURST": "0"}))
+	if err != nil || cfg.RateLimit != 0 {
+		t.Fatalf("a rate limit of 0 turns limiting off, and then the burst is not checked: %+v, %v", cfg, err)
+	}
+
+	cfg, err = config.Load(nil, fakeEnv(map[string]string{
+		"GODROP_RATE_LIMIT": "2.5", "GODROP_RATE_BURST": "7", "GODROP_TRUST_PROXY": "true",
+	}))
+	if err != nil || cfg.RateLimit != 2.5 || cfg.RateBurst != 7 || !cfg.TrustProxy {
+		t.Fatalf("env: %+v, %v", cfg, err)
 	}
 }

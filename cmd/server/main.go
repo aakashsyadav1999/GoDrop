@@ -99,9 +99,22 @@ func run() error {
 		srv.ConsumeResults()
 	}()
 
+	limiterCtx, stopLimiter := context.WithCancel(context.Background())
+	defer stopLimiter()
+
+	var handler http.Handler = srv.Routes()
+	if cfg.RateLimit > 0 {
+		handler = api.RateLimit(limiterCtx, api.RateLimitConfig{
+			RPS:        cfg.RateLimit,
+			Burst:      cfg.RateBurst,
+			TrustProxy: cfg.TrustProxy,
+		}, handler)
+	}
+	handler = api.RequestLogger(logger, handler)
+
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.RequestLogger(logger, srv.Routes()),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

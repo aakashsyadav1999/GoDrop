@@ -36,7 +36,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// moment, and a late "queued" write would overwrite its "done".
 	rec := store.Record{ID: j.ID, URL: j.URL, Status: job.StatusQueued, CreatedAt: j.CreatedAt}
 	if err := s.store.Save(r.Context(), rec); err != nil {
-		slog.Error("save queued job", "id", j.ID, "err", err)
+		slog.Error("save queued job", "job_id", j.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -49,11 +49,12 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "server is busy, try again shortly")
 			return
 		}
-		slog.Error("submit job", "id", j.ID, "err", err)
+		slog.Error("submit job", "job_id", j.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
+	slog.Info("job queued", "job_id", j.ID, "host", hostOf(j.URL))
 	w.Header().Set("Location", "/jobs/"+j.ID)
 	writeJSON(w, http.StatusAccepted, map[string]string{"id": j.ID})
 }

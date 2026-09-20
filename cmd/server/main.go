@@ -16,6 +16,7 @@ import (
 	"github.com/aakash/godrop/internal/config"
 	"github.com/aakash/godrop/internal/database"
 	"github.com/aakash/godrop/internal/job"
+	"github.com/aakash/godrop/internal/logging"
 	"github.com/aakash/godrop/internal/pool"
 	"github.com/aakash/godrop/internal/processor"
 	"github.com/aakash/godrop/internal/store"
@@ -44,6 +45,12 @@ func run() error {
 	}
 
 	storeKind := "memory"
+	logger, err := logging.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(logger)
+
 	var jobStore store.JobStore = store.NewMemoryStore()
 	if cfg.RedisAddr != "" {
 		rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
@@ -94,7 +101,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           srv.Routes(),
+		Handler:           api.RequestLogger(logger, srv.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

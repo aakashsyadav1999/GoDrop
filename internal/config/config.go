@@ -21,6 +21,8 @@ type Config struct {
 	ShutdownTimeout time.Duration // wait for in-flight HTTP requests on shutdown
 	DrainTimeout    time.Duration // wait for queued jobs to finish on shutdown
 	PostgresDSN     string        // empty means do not record job history
+	LogLevel        string        // debug, info, warn or error
+	LogFormat       string        // text or json
 
 }
 
@@ -33,6 +35,8 @@ func defaults() Config {
 		JobTTL:          24 * time.Hour,
 		ShutdownTimeout: 10 * time.Second,
 		DrainTimeout:    30 * time.Second,
+		LogLevel:        "info",
+		LogFormat:       "text",
 	}
 }
 
@@ -56,6 +60,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs.StringVar(&cfg.RedisAddr, "redis", cfg.RedisAddr, "Redis address; empty keeps job state in memory (env GODROP_REDIS_ADDR)")
 	fs.DurationVar(&cfg.JobTTL, "job-ttl", cfg.JobTTL, "how long a job record is kept (env GODROP_JOB_TTL)")
 	fs.StringVar(&cfg.PostgresDSN, "postgres", cfg.PostgresDSN, "Postgres DSN for job history; empty disables history (env GODROP_POSTGRES_DSN)")
+	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "debug, info, warn or error (env GODROP_LOG_LEVEL)")
+	fs.StringVar(&cfg.LogFormat, "log-format", cfg.LogFormat, "text or json (env GODROP_LOG_FORMAT)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -108,6 +114,8 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	dur(&c.JobTTL, "GODROP_JOB_TTL")
 	dur(&c.ShutdownTimeout, "GODROP_SHUTDOWN_TIMEOUT")
 	dur(&c.DrainTimeout, "GODROP_DRAIN_TIMEOUT")
+	str(&c.LogLevel, "GODROP_LOG_LEVEL")
+	str(&c.LogFormat, "GODROP_LOG_FORMAT")
 
 	return errors.Join(errs...)
 }
@@ -121,6 +129,18 @@ func (c Config) validate() error {
 	if c.QueueSize < 1 {
 		errs = append(errs, errors.New("queue must be at least 1"))
 	}
+
+	switch c.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		errs = append(errs, fmt.Errorf("log level %q must be debug, info, warn or error", c.LogLevel))
+	}
+	switch c.LogFormat {
+	case "text", "json":
+	default:
+		errs = append(errs, fmt.Errorf("log format %q must be text or json", c.LogFormat))
+	}
+
 	for _, d := range []struct {
 		name  string
 		value time.Duration

@@ -85,6 +85,8 @@ func TestConfigRejectsBadValues(t *testing.T) {
 		{"negative timeout", []string{"-timeout=-1s"}, nil, "job timeout must be positive"},
 		{"unknown flag", []string{"-nope"}, nil, "nope"},
 		{"stray argument", []string{"extra"}, nil, "unexpected argument"},
+		{"bad log level", nil, map[string]string{"GODROP_LOG_LEVEL": "loud"}, "log level"},
+		{"bad log format", []string{"-log-format", "xml"}, nil, "log format"},
 	}
 
 	for _, tc := range tests {

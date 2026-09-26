@@ -80,8 +80,13 @@ func run() error {
 		history = database.NewHistory(db)
 	}
 
+	fetcher := processor.NewSafeFetcher()
+	if cfg.AllowPrivateURLs {
+		slog.Warn("private and loopback URLs are allowed: development only")
+		fetcher = processor.NewFetcher()
+	}
+
 	// The Fetcher takes a string; the pool carries URLJobs. ProcessorFunc adapts one to the other.
-	fetcher := processor.NewFetcher()
 	fetchURL := pool.ProcessorFunc[job.URLJob, processor.Page](
 		func(ctx context.Context, j job.URLJob) (processor.Page, error) {
 			return fetcher.Process(ctx, j.URL)

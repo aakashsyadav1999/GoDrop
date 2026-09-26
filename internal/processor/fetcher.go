@@ -5,8 +5,12 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/aakash/godrop/internal/netguard"
 	"github.com/aakash/godrop/internal/pool"
 )
+
+// maxBodyBytes caps how much of a response is read, so one URL cannot tie a worker up downloading forever.
+const maxBodyBytes = 1 << 20
 
 // Page is what a successful fetch produces. It has room to grow (body size, title, ...).
 type Page struct {
@@ -21,8 +25,14 @@ type Fetcher struct {
 // Compile-time check that *Fetcher is a pool.Processor.
 var _ pool.Processor[string, Page] = (*Fetcher)(nil)
 
+// NewFetcher allows private and loopback addresses; use it for the CLI and development.
 func NewFetcher() *Fetcher {
 	return &Fetcher{client: &http.Client{}}
+}
+
+// NewSafeFetcher refuses to connect to anything that is not a public address.
+func NewSafeFetcher() *Fetcher {
+	return &Fetcher{client: &http.Client{Transport: netguard.NewTransport()}}
 }
 
 // Process fetches url. A 404 is not an error: the server answered, so it comes
@@ -40,7 +50,7 @@ func (f *Fetcher) Process(ctx context.Context, url string) (Page, error) {
 	defer resp.Body.Close()
 
 	// Read the body so the connection can be reused for the next request.
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxBodyBytes)); err != nil {
 		return Page{}, err
 	}
 

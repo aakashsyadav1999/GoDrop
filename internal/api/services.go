@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/aakash/godrop/internal/job"
+	"github.com/aakash/godrop/internal/netguard"
 	"github.com/aakash/godrop/internal/pool"
 	"github.com/aakash/godrop/internal/processor"
 	"github.com/aakash/godrop/internal/store"
@@ -52,7 +54,7 @@ func (s *Server) ConsumeResults() {
 
 		if r.Err != nil {
 			rec.Status = job.StatusFailed
-			rec.Error = r.Err.Error()
+			rec.Error = publicError(r.Err)
 			log.Warn("job failed", "err", r.Err, "duration_ms", rec.DurationMS)
 		} else {
 			rec.Status = job.StatusDone
@@ -81,4 +83,12 @@ func hostOf(raw string) string {
 		return ""
 	}
 	return u.Host
+}
+
+// publicError hides the resolved address from callers; logs keep the real error.
+func publicError(err error) string {
+	if errors.Is(err, netguard.ErrBlockedAddress) {
+		return "the URL points to a non-public address, which is not allowed"
+	}
+	return err.Error()
 }

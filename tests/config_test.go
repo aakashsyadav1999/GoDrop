@@ -123,6 +123,14 @@ func TestConfigRateLimitSettings(t *testing.T) {
 		t.Fatalf("a rate limit of 0 turns limiting off, and then the burst is not checked: %+v, %v", cfg, err)
 	}
 
+	if cfg.AllowPrivateURLs {
+		t.Fatal("private URLs must be blocked by default")
+	}
+	cfg, err = config.Load([]string{"-allow-private-urls"}, fakeEnv(nil))
+	if err != nil || !cfg.AllowPrivateURLs {
+		t.Fatalf("flag: %+v, %v", cfg, err)
+	}
+
 	cfg, err = config.Load(nil, fakeEnv(map[string]string{
 		"GODROP_RATE_LIMIT": "2.5", "GODROP_RATE_BURST": "7", "GODROP_TRUST_PROXY": "true",
 	}))

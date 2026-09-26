@@ -12,21 +12,21 @@ import (
 )
 
 type Config struct {
-	Addr            string        // address the HTTP server listens on
-	Workers         int           // concurrent workers in the pool
-	QueueSize       int           // jobs that may wait for a free worker
-	JobTimeout      time.Duration // per-job timeout
-	RedisAddr       string        // empty means keep job state in memory
-	JobTTL          time.Duration // how long a finished job record is kept
-	ShutdownTimeout time.Duration // wait for in-flight HTTP requests on shutdown
-	DrainTimeout    time.Duration // wait for queued jobs to finish on shutdown
-	PostgresDSN     string        // empty means do not record job history
-	LogLevel        string        // debug, info, warn or error
-	LogFormat       string        // text or json
-	RateLimit       float64       // requests per second allowed per client; 0 disables limiting
-	RateBurst       int           // requests a client may send at once
-	TrustProxy      bool          // believe X-Forwarded-For (only behind a proxy you control)
-
+	Addr             string        // address the HTTP server listens on
+	Workers          int           // concurrent workers in the pool
+	QueueSize        int           // jobs that may wait for a free worker
+	JobTimeout       time.Duration // per-job timeout
+	RedisAddr        string        // empty means keep job state in memory
+	JobTTL           time.Duration // how long a finished job record is kept
+	ShutdownTimeout  time.Duration // wait for in-flight HTTP requests on shutdown
+	DrainTimeout     time.Duration // wait for queued jobs to finish on shutdown
+	PostgresDSN      string        // empty means do not record job history
+	LogLevel         string        // debug, info, warn or error
+	LogFormat        string        // text or json
+	RateLimit        float64       // requests per second allowed per client; 0 disables limiting
+	RateBurst        int           // requests a client may send at once
+	TrustProxy       bool          // believe X-Forwarded-For (only behind a proxy you control)
+	AllowPrivateURLs bool          // let jobs fetch private and loopback addresses (development only)
 }
 
 func defaults() Config {
@@ -70,6 +70,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs.Float64Var(&cfg.RateLimit, "rate-limit", cfg.RateLimit, "requests per second per client; 0 disables limiting (env GODROP_RATE_LIMIT)")
 	fs.IntVar(&cfg.RateBurst, "rate-burst", cfg.RateBurst, "requests a client may send at once (env GODROP_RATE_BURST)")
 	fs.BoolVar(&cfg.TrustProxy, "trust-proxy", cfg.TrustProxy, "read the client address from X-Forwarded-For; only behind a proxy you control (env GODROP_TRUST_PROXY)")
+	fs.BoolVar(&cfg.AllowPrivateURLs, "allow-private-urls", cfg.AllowPrivateURLs, "let jobs fetch private and loopback addresses; development only (env GODROP_ALLOW_PRIVATE_URLS)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -147,6 +148,7 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	flt(&c.RateLimit, "GODROP_RATE_LIMIT")
 	num(&c.RateBurst, "GODROP_RATE_BURST")
 	boolean(&c.TrustProxy, "GODROP_TRUST_PROXY")
+	boolean(&c.AllowPrivateURLs, "GODROP_ALLOW_PRIVATE_URLS")
 
 	return errors.Join(errs...)
 }

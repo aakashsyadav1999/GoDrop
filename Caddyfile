@@ -1,0 +1,13 @@
+{$SITE_ADDRESS:http://localhost} {
+	encode gzip zstd
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+
+	reverse_proxy app:8080
+}

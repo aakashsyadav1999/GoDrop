@@ -44,10 +44,27 @@ services:
       GODROP_LOG_FORMAT: "json"
       GODROP_RATE_LIMIT: "10"
       GODROP_RATE_BURST: "20"
-      # No reverse proxy in front yet, so nothing to trust. Flips to "true" once Caddy is added.
-      GODROP_TRUST_PROXY: "false"
+      # Caddy is the only way in, and it sets X-Forwarded-For, so this is safe to trust.
+      GODROP_TRUST_PROXY: "true"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - app
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-http://localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
     restart: unless-stopped
 
 volumes:
   redis-data:
   pg-data:
+  caddy-data:
+  caddy-config:

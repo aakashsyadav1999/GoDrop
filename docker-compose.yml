@@ -2,8 +2,6 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:6380:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -11,15 +9,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: godrop
-      POSTGRES_PASSWORD: godrop # local development only
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: godrop
-    ports:
-      - "127.0.0.1:5433:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -27,6 +24,29 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: godrop-server:latest
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      GODROP_ADDR: ":8080"
+      GODROP_WORKERS: "5"
+      GODROP_QUEUE: "100"
+      GODROP_JOB_TIMEOUT: "10s"
+      GODROP_REDIS_ADDR: "redis:6379"
+      GODROP_POSTGRES_DSN: "postgres://godrop:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/godrop?sslmode=disable"
+      GODROP_LOG_FORMAT: "json"
+      GODROP_RATE_LIMIT: "10"
+      GODROP_RATE_BURST: "20"
+      # No reverse proxy in front yet, so nothing to trust. Flips to "true" once Caddy is added.
+      GODROP_TRUST_PROXY: "false"
+    restart: unless-stopped
 
 volumes:
   redis-data:

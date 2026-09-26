@@ -1,0 +1,18 @@
+# Auto-merged by `docker compose` when this file sits next to docker-compose.yml.
+# Local-only convenience: reach redis/postgres directly (redis-cli, psql, or
+# running ./cmd/server on the host instead of in a container), and reach the
+# app without a reverse proxy in front. None of this exists on the deploy
+# target — only docker-compose.yml is copied there.
+
+services:
+  redis:
+    ports:
+      - "127.0.0.1:6380:6379"
+
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  app:
+    ports:
+      - "127.0.0.1:8080:8080"
